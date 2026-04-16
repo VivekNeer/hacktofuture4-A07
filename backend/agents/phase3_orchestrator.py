@@ -9,11 +9,13 @@ from diagnosis.feature_extractor import extract_features
 from diagnosis.llm_fallback import call_llm_api, should_use_llm_fallback
 from diagnosis.rule_engine import match_fingerprint
 from governance.token_governor import TokenGovernor
+from planner.planner_agent import PlannerAgent
 from planner.policy_ranker import lookup_policy
 
 
 GLOBAL_MONITOR_AGENT = MonitorAgent()
 GLOBAL_TOKEN_GOVERNOR = TokenGovernor()
+GLOBAL_PLANNER_AGENT = PlannerAgent()
 
 
 def _utc_now() -> str:
@@ -124,45 +126,30 @@ def diagnose_snapshot(
 
 def plan_diagnosis(diagnosis: dict[str, Any], context: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     ctx = context or {}
+    snapshot = {
+        "dependency_graph_summary": str(ctx.get("dependency_graph_summary", "")),
+        "has_rollback_revision": bool(ctx.get("has_rollback_revision", True)),
+    }
+
+    planner_output = GLOBAL_PLANNER_AGENT.run(
+        diagnosis=diagnosis,
+        snapshot=snapshot,
+        context=ctx,
+    )
+
     fingerprint_id = diagnosis.get("fingerprint_id")
-
-    actions = lookup_policy(fingerprint_id, ctx) if fingerprint_id else None
-    if actions:
-        return {
-            "planner_source": "policy_catalog",
-            "fingerprint_id": fingerprint_id,
-            "actions": actions,
-            "planned_at": _utc_now(),
-        }
-
-    fallback_actions = [
-        {
-            "action_id": f"llm-act-{idx + 1}",
-            "command": action,
-            "risk": "medium",
-            "approval_required": True,
-            "blast_radius_score": 0.3,
-            "description": "LLM suggested remediation",
-        }
-        for idx, action in enumerate(diagnosis.get("suggested_actions", []))
-    ]
-
-    if not fallback_actions:
-        fallback_actions = [
-            {
-                "action_id": "safe-investigate",
-                "command": "kubectl describe pod <pod-name> -n <namespace>",
-                "risk": "low",
-                "approval_required": False,
-                "blast_radius_score": 0.05,
-                "description": "Default investigation action",
-            }
-        ]
+    planner_source = "policy_catalog" if lookup_policy(str(fingerprint_id), ctx) else "fallback"
+    serialized_actions = []
+    for action in planner_output.actions:
+        payload = action.model_dump()
+        if "command" not in payload:
+            payload["command"] = payload.get("action", "")
+        serialized_actions.append(payload)
 
     return {
-        "planner_source": "fallback",
+        "planner_source": planner_source,
         "fingerprint_id": fingerprint_id,
-        "actions": fallback_actions,
+        "actions": serialized_actions,
         "planned_at": _utc_now(),
     }
 
