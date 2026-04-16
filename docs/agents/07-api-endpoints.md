@@ -104,7 +104,72 @@ Returns token/cost counters from the global token governor:
 - call count
 - estimated/actual token totals
 
+## Execute Details
+
+### POST /incidents/{incident_id}/execute (Expanded)
+
+Executes selected approved action through executor agent in vCluster sandbox.
+
+**Request body** (optional):
+
+```json
+{
+  "action_index": 0 // Default: 0. Must be valid integer within plan actions.
+}
+```
+
+Execution flow:
+
+1. Validate incident is in `approved` status
+2. Create vCluster sandbox
+3. Validate command against allowlist (safe kubectl operations only)
+4. Run action in sandbox
+5. Promote if successful
+
+Allowlisted commands:
+
+- `kubectl rollout restart`
+- `kubectl scale deployment`
+- `kubectl set resources`
+- `kubectl patch pod`
+
+Validation:
+
+- 400 if incident is not in `approved` status
+- 400 if plan/actions are missing
+- 400 if `action_index` is invalid or out of range
+- 400 if command is not in allowlist
+
+Status transitions:
+
+- `approved -> executing -> verifying` on successful execution
+- `approved -> executing -> failed` when command is blocked or execution fails
+
+### POST /incidents/{incident_id}/verify (Expanded)
+
+**Request body**:
+
+```json
+{
+  "window_seconds": 120, // Required: positive integer
+  "metrics": {
+    // Optional but recommended
+    "memory": "55%", // Must be valid percentage (0-100, finite)
+    "cpu": "40%" // Can also use memory_pct, cpu_pct keys
+  }
+}
+```
+
+Threshold checks (recovered when ALL pass):
+
+- Memory < 90%
+- CPU < 85%
+- Restarts stable (no new restarts in window)
+- Error rate < 5%
+- Latency p95 < 1.5s
+
 ## Notes
 
 - Route prefixes currently follow the project router layout (no /api/v1 prefix).
+- All percent values are floored (not rounded) to preserve threshold semantics (e.g., 89.6% -> 89% stays below 90% limit).
 - Contracts are intentionally demo-oriented and deterministic for hackathon reliability.
