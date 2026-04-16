@@ -54,11 +54,29 @@ FINGERPRINT_CATALOG = [
 ]
 
 
+def _normalize_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Normalize flat monitor snapshots into nested diagnosis shape."""
+    if "metrics" in snapshot:
+        return snapshot
+
+    return {
+        "metrics": {
+            "memory_pct": snapshot.get("memory_pct", 0),
+            "cpu_pct": snapshot.get("cpu_pct", 0),
+            "restart_count": snapshot.get("restart_count", 0),
+            "latency_delta": snapshot.get("latency_delta", 0),
+        },
+        "events": snapshot.get("event_reason", snapshot.get("events", [])),
+        "logs_summary": snapshot.get("log_signatures", snapshot.get("logs_summary", [])),
+    }
+
+
 def match_fingerprint(snapshot: dict[str, Any]) -> Optional[dict[str, Any]]:
     """
     Match incident snapshot against fingerprint catalog.
     Returns the best matching fingerprint with confidence score.
     """
+    normalized_snapshot = _normalize_snapshot(snapshot)
     matches = []
 
     for fp in FINGERPRINT_CATALOG:
@@ -66,7 +84,7 @@ def match_fingerprint(snapshot: dict[str, Any]) -> Optional[dict[str, Any]]:
         all_match = True
         for condition in fp["conditions"]:
             try:
-                if not condition(snapshot):
+                if not condition(normalized_snapshot):
                     all_match = False
                     break
             except (KeyError, ValueError, TypeError):

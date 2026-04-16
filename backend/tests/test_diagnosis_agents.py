@@ -68,6 +68,19 @@ def test_fingerprint_cpu_starvation():
     print("✓ FP-004 (CPU Starvation) detection passed")
 
 
+def test_fingerprint_db_pool_saturation():
+    """Test FP-005: DB connection pool saturation detection."""
+    snapshot = {
+        "metrics": {"memory_pct": 40.0, "cpu_pct": 35.0, "restart_count": 1, "latency_delta": 3.5},
+        "events": ["Service latency spike"],
+        "logs_summary": ["connection timeout exceeded while waiting for db"],
+    }
+    result = match_fingerprint(snapshot)
+    assert result is not None, "DB pool fingerprint should match"
+    assert result["fingerprint_id"] == "FP-005", f"Expected FP-005, got {result['fingerprint_id']}"
+    print("✓ FP-005 (DB Pool Saturation) detection passed")
+
+
 def test_fingerprint_no_match():
     """Test no fingerprint match when conditions don't align."""
     snapshot = {
@@ -125,6 +138,7 @@ if __name__ == "__main__":
     test_fingerprint_crash_loop()
     test_fingerprint_image_pull()
     test_fingerprint_cpu_starvation()
+    test_fingerprint_db_pool_saturation()
     test_fingerprint_no_match()
     test_feature_extraction_oom_case()
     test_feature_extraction_cpu_case()

@@ -5,7 +5,9 @@ Tests for LLM fallback diagnosis layer.
 import sys
 import json
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
+
+import pytest
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
@@ -39,7 +41,7 @@ def test_llm_api_success_valid_json():
     mock_response.raise_for_status = Mock()
     
     with patch("diagnosis.llm_fallback.requests.post", return_value=mock_response):
-        result = call_llm_api(snapshot)
+        result = call_llm_api(snapshot, api_url="https://example.local/api/chat")
     
     assert result is not None
     assert result["root_cause"] == "Memory exhaustion due to memory leak"
@@ -73,7 +75,7 @@ def test_llm_api_success_markdown_json():
     mock_response.raise_for_status = Mock()
     
     with patch("diagnosis.llm_fallback.requests.post", return_value=mock_response):
-        result = call_llm_api(snapshot)
+        result = call_llm_api(snapshot, api_url="https://example.local/api/chat")
     
     assert result is not None
     assert result["root_cause"] == "Application bug causing repeated crashes"
@@ -88,7 +90,7 @@ def test_llm_api_timeout():
     with patch("diagnosis.llm_fallback.requests.post") as mock_post:
         import requests
         mock_post.side_effect = requests.exceptions.Timeout("API timeout")
-        result = call_llm_api(snapshot, timeout_seconds=5)
+        result = call_llm_api(snapshot, api_url="https://example.local/api/chat", timeout_seconds=5)
     
     assert result is None, "Should return None on timeout"
     print("✓ LLM API timeout (graceful fallback) passed")
@@ -101,7 +103,7 @@ def test_llm_api_connection_error():
     with patch("diagnosis.llm_fallback.requests.post") as mock_post:
         import requests
         mock_post.side_effect = requests.exceptions.ConnectionError("Connection failed")
-        result = call_llm_api(snapshot)
+        result = call_llm_api(snapshot, api_url="https://example.local/api/chat")
     
     assert result is None, "Should return None on connection error"
     print("✓ LLM API connection error (graceful fallback) passed")
@@ -116,7 +118,7 @@ def test_llm_api_invalid_json_response():
     mock_response.raise_for_status = Mock()
     
     with patch("diagnosis.llm_fallback.requests.post", return_value=mock_response):
-        result = call_llm_api(snapshot)
+        result = call_llm_api(snapshot, api_url="https://example.local/api/chat")
     
     assert result is None, "Should return None on parse failure"
     print("✓ LLM API invalid JSON (graceful fallback) passed")
@@ -136,7 +138,7 @@ def test_llm_api_missing_required_fields():
     mock_response.raise_for_status = Mock()
     
     with patch("diagnosis.llm_fallback.requests.post", return_value=mock_response):
-        result = call_llm_api(snapshot)
+        result = call_llm_api(snapshot, api_url="https://example.local/api/chat")
     
     assert result is None, "Should return None if required fields missing"
     print("✓ LLM API missing fields (graceful fallback) passed")
@@ -188,11 +190,9 @@ def test_parse_llm_response_missing_root_cause():
     }
     snapshot = {"metrics": {}, "events": [], "logs_summary": []}
     
-    try:
+    with pytest.raises(ValueError) as exc_info:
         _parse_llm_response(response_data, snapshot)
-        assert False, "Should raise ValueError"
-    except ValueError as e:
-        assert "root_cause" in str(e)
+    assert "root_cause" in str(exc_info.value)
     
     print("✓ Parse LLM response (missing field error) passed")
 
@@ -200,22 +200,22 @@ def test_parse_llm_response_missing_root_cause():
 def test_should_use_llm_fallback_low_confidence():
     """Test LLM fallback triggered for low rule confidence."""
     # Rule confidence 0.5 < threshold (0.75) AND budget allows
-    assert should_use_llm_fallback(0.5, True) == True
+    assert should_use_llm_fallback(0.5, True)
     print("✓ LLM fallback decision (low confidence, budget OK) passed")
 
 
 def test_should_use_llm_fallback_high_confidence():
     """Test LLM fallback NOT triggered for high rule confidence."""
     # Rule confidence 0.9 >= threshold (0.75)
-    assert should_use_llm_fallback(0.9, True) == False
-    assert should_use_llm_fallback(0.9, False) == False
+    assert not should_use_llm_fallback(0.9, True)
+    assert not should_use_llm_fallback(0.9, False)
     print("✓ LLM fallback decision (high confidence) passed")
 
 
 def test_should_use_llm_fallback_no_budget():
     """Test LLM fallback NOT triggered when budget exhausted."""
     # Rule confidence 0.5 < threshold BUT budget_allows=False
-    assert should_use_llm_fallback(0.5, False) == False
+    assert not should_use_llm_fallback(0.5, False)
     print("✓ LLM fallback decision (low confidence, no budget) passed")
 
 

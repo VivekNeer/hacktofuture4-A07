@@ -16,11 +16,11 @@ class TokenGovernor:
     """
 
     # Model pricing (example rates - adjust per actual model)
-    # Rates per token: multiply by 1_000_000 to get per-token cost from per-1M-tokens price
+    # Rates are per token; divide per-1M-token price by 1_000_000.
     MODEL_PRICING = {
-        "gpt-4": {"input": 0.03 / 1000, "output": 0.06 / 1000},  # $30/$60 per 1M tokens
-        "gpt-3.5-turbo": {"input": 0.0005 / 1000, "output": 0.0015 / 1000},  # $0.50/$1.50 per 1M
-        "claude": {"input": 0.008 / 1000, "output": 0.024 / 1000},  # $8/$24 per 1M
+        "gpt-4": {"input": 30.0 / 1_000_000, "output": 60.0 / 1_000_000},
+        "gpt-3.5-turbo": {"input": 0.5 / 1_000_000, "output": 1.5 / 1_000_000},
+        "claude": {"input": 8.0 / 1_000_000, "output": 24.0 / 1_000_000},
     }
 
     def __init__(self, budget: Optional[TokenBudget] = None, model: str = "gpt-3.5-turbo") -> None:
@@ -28,6 +28,8 @@ class TokenGovernor:
         self.model = model
         self.calls_this_incident = 0
         self.cost_this_incident = 0.0
+        self.estimated_tokens_this_incident = 0
+        self.estimated_cost_this_incident = 0.0
 
     def estimate_tokens(self, text: str) -> int:
         """
@@ -54,18 +56,28 @@ class TokenGovernor:
     def record_ai_call(self, estimated_tokens: int, actual_tokens: int, estimated_cost: float, actual_cost: float) -> None:
         """Record AI call metrics."""
         self.calls_this_incident += 1
+        self.estimated_tokens_this_incident += estimated_tokens
+        self.estimated_cost_this_incident += estimated_cost
         self.cost_this_incident += actual_cost
 
     def reset_incident(self) -> None:
         """Reset counters for next incident."""
         self.calls_this_incident = 0
+        self.estimated_tokens_this_incident = 0
+        self.estimated_cost_this_incident = 0.0
         self.cost_this_incident = 0.0
 
-    def should_fallback_to_rule_only(self, rule_confidence: float) -> bool:
+    def should_fallback_to_rule_only(self, rule_confidence: float, estimated_ai_cost: Optional[float] = None) -> bool:
         """Determine if we should use rule-only path based on confidence."""
         if rule_confidence >= self.budget.rule_confidence_threshold:
             return True  # High confidence, skip AI
-        if not self.can_afford_ai_call(0.01):  # Rough estimate for AI call
+
+        if estimated_ai_cost is None:
+            default_input = self.estimate_tokens("incident snapshot")
+            default_output = self.estimate_tokens("diagnosis summary")
+            estimated_ai_cost = self.estimate_cost(default_input, default_output)
+
+        if not self.can_afford_ai_call(estimated_ai_cost):
             return True  # Out of budget
         return False
 

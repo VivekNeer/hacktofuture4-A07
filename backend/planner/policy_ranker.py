@@ -87,7 +87,7 @@ def lookup_policy(fingerprint_id: str, context: Optional[dict[str, Any]] = None)
 
     for policy in POLICY_CATALOG:
         if policy["fingerprint_id"] == fingerprint_id:
-            return policy["actions"]
+            return rank_actions_by_risk(policy["actions"])
 
     return None
 

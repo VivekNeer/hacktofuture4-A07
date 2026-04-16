@@ -5,6 +5,7 @@ Handles AI API calls with JSON parsing, graceful error handling, and token budge
 
 import json
 import logging
+import os
 from typing import Optional, Dict, Any
 import requests
 
@@ -19,7 +20,7 @@ class LLMFallbackError(Exception):
 def call_llm_api(
     incident_snapshot: Dict[str, Any],
     model: str = "custom-api",
-    api_url: str = "https://www.aiversusme.com/api/chat",
+    api_url: Optional[str] = None,
     timeout_seconds: int = 30,
 ) -> Optional[Dict[str, Any]]:
     """
@@ -39,13 +40,19 @@ def call_llm_api(
         LLMFallbackError: If API communication fails unexpectedly
     """
     
+    # Resolve endpoint from caller input or environment configuration.
+    resolved_api_url = api_url or os.getenv("LLM_FALLBACK_API_URL")
+    if not resolved_api_url:
+        logger.warning("LLM fallback endpoint is not configured; skipping AI call")
+        return None
+
     # Construct prompt for LLM
     prompt = _construct_diagnosis_prompt(incident_snapshot)
     
     try:
         # Call LLM API
         response = requests.post(
-            api_url,
+            resolved_api_url,
             json={"message": prompt},
             timeout=timeout_seconds,
             headers={"Content-Type": "application/json"},
@@ -75,7 +82,7 @@ def call_llm_api(
         return None
     except Exception as e:
         logger.error(f"Unexpected LLM fallback error: {e}")
-        raise LLMFallbackError(f"LLM fallback failed unexpectedly: {e}")
+        raise LLMFallbackError(f"LLM fallback failed unexpectedly: {e}") from e
 
 
 def _construct_diagnosis_prompt(snapshot: Dict[str, Any]) -> str:
@@ -104,7 +111,7 @@ def _construct_diagnosis_prompt(snapshot: Dict[str, Any]) -> str:
 {chr(10).join(f"- {e}" for e in events[:5]) if events else "- None"}
 
 **Log Signatures (top 5):**
-{chr(10).join(f"- {l}" for l in logs_summary[:5]) if logs_summary else "- None"}
+{chr(10).join(f"- {log_signature}" for log_signature in logs_summary[:5]) if logs_summary else "- None"}
 
 **Task:** Identify the most likely root cause. Respond with JSON:
 {{
@@ -153,7 +160,7 @@ def _parse_llm_response(response_data: Dict[str, Any], snapshot: Dict[str, Any])
                 raise ValueError("No JSON found in response")
             diagnosis = json.loads(json_match.group(0))
         except (json.JSONDecodeError, AttributeError) as e:
-            raise ValueError(f"Failed to parse JSON from LLM response: {e}")
+            raise ValueError(f"Failed to parse JSON from LLM response: {e}") from e
     
     # Validate required fields
     required_fields = ["root_cause", "confidence"]
@@ -161,11 +168,17 @@ def _parse_llm_response(response_data: Dict[str, Any], snapshot: Dict[str, Any])
         if field not in diagnosis:
             raise ValueError(f"Missing required field: {field}")
     
-    # Ensure confidence is between 0 and 1
-    confidence = diagnosis.get("confidence", 0)
-    if not isinstance(confidence, (int, float)) or not (0 <= confidence <= 1):
-        logger.warning(f"Invalid confidence value: {confidence}, clamping to valid range")
-        confidence = max(0, min(1, float(confidence)))
+    # Ensure confidence is numeric and clamped to [0, 1].
+    raw_confidence = diagnosis.get("confidence", 0)
+    try:
+        confidence = float(raw_confidence)
+    except (TypeError, ValueError):
+        logger.warning(f"Invalid confidence value: {raw_confidence!r}, defaulting to 0.0")
+        confidence = 0.0
+
+    if not (0 <= confidence <= 1):
+        logger.warning(f"Out-of-range confidence value: {raw_confidence!r}, clamping to valid range")
+        confidence = max(0.0, min(1.0, confidence))
     
     # Normalize response
     return {
@@ -177,7 +190,7 @@ def _parse_llm_response(response_data: Dict[str, Any], snapshot: Dict[str, Any])
     }
 
 
-def should_use_llm_fallback(rule_confidence: float, budget_allows: bool) -> bool:
+def should_use_llm_fallback(rule_confidence: float, budget_allows: bool, confidence_threshold: float = 0.75) -> bool:
     """
     Determine if LLM fallback should be used.
     
@@ -189,5 +202,4 @@ def should_use_llm_fallback(rule_confidence: float, budget_allows: bool) -> bool
         True if LLM should be called, False otherwise
     """
     # Use LLM if rule confidence is low AND budget permits
-    confidence_threshold = 0.75
     return rule_confidence < confidence_threshold and budget_allows

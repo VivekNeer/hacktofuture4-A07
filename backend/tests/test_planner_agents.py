@@ -18,7 +18,8 @@ def test_policy_lookup_oom():
     actions = lookup_policy("FP-001")
     assert actions is not None, "FP-001 should have policy actions"
     assert len(actions) >= 1, "Should have at least one action"
-    assert "rollout restart" in actions[0]["command"], "Expected restart action"
+    commands = [action["command"] for action in actions]
+    assert any("rollout restart" in command for command in commands), "Expected restart action"
     print("✓ Policy lookup (FP-001: OOM) passed")
     print(f"  Actions available: {len(actions)}")
     for action in actions:

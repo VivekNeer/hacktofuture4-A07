@@ -1,5 +1,4 @@
 from typing import Any
-import statistics
 
 
 def extract_features(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -60,11 +59,10 @@ def _detect_burst(current: float, baseline: float, threshold: int) -> bool:
 
 
 def _extract_top_signature(logs_summary: list[Any]) -> str:
-    """Extract the most frequent error signature."""
+    """Extract the top-ranked error signature from pre-ordered summaries."""
     if not logs_summary:
         return "none"
-    if isinstance(logs_summary, list) and len(logs_summary) > 0:
-        top = logs_summary[0]
-        if isinstance(top, dict) and "signature" in top:
-            return str(top["signature"])[:100]
+    top = logs_summary[0]
+    if isinstance(top, dict) and "signature" in top:
+        return str(top["signature"])[:100]
     return "unknown"
