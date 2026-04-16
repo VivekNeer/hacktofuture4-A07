@@ -9,3 +9,7 @@ node_modules/
 *.db
 .env
 .env.*
+.run/
+*.stdout.log
+*.stderr.log
+*.log

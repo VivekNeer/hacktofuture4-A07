@@ -1,5 +1,20 @@
 # Current Implementation Status & Remaining Workstreams
 
+**Progress estimate**: about **65% complete** and about **35% remaining**.
+
+What is already in place:
+
+- The backend API, routing, state transitions, and tests are working.
+- The monitor/diagnose/planner/executor/verifier loop is implemented.
+- The Windows setup/start/stop scripts now automate the local demo flow.
+- The frontend can reach the backend once CORS is enabled, so the scenario picker and injection flow work in-browser.
+
+What is still left:
+
+- Real collector hardening for Loki, Prometheus, Tempo, and K8s events.
+- Durable persistence and rollout-observer production hardening.
+- Frontend demo polish and workflow refinements.
+
 ## ✅ Completed (Merged to Main)
 
 ### Backend Core (Aravind)

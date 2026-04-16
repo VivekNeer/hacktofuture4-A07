@@ -11,6 +11,13 @@ This project implements a complete, multi-agent incident-response loop with moni
 - Phase 3: Monitor -> diagnose -> plan orchestration endpoints
 - Phase 4: ✅ Complete — Incident execution in sandbox, threshold-based recovery verification, full lifecycle closure
 
+## Progress Snapshot
+
+- **Approximate completion**: 65%
+- **Approximate remaining work**: 35%
+- **Current milestone**: local demo loop is usable end-to-end on Windows
+- **Remaining emphasis**: real telemetry collectors, persistence hardening, and production-grade polish
+
 ## What Is Implemented
 
 ### Monitor Agent

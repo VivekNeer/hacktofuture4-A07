@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 import httpx
+from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from init_db import init_db
@@ -14,6 +15,15 @@ from routers.scenarios import router as scenarios_router
 
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, version=settings.app_version)
+
+    cors_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.on_event("startup")
     async def startup() -> None:
