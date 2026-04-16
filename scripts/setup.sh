@@ -4,6 +4,44 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+HELM_TIMEOUT="${HELM_TIMEOUT:-8m}"
+HELM_RETRIES="${HELM_RETRIES:-3}"
+
+dump_monitoring_diagnostics() {
+  echo "=== Monitoring diagnostics (pods) ==="
+  kubectl get pods -n monitoring -o wide || true
+  echo "=== Monitoring diagnostics (recent events) ==="
+  kubectl get events -n monitoring --sort-by=.lastTimestamp | tail -n 80 || true
+}
+
+helm_upgrade_with_retry() {
+  local release="$1"
+  local chart="$2"
+  local values_file="$3"
+  local retries="$4"
+
+  local attempt=1
+  while [ "$attempt" -le "$retries" ]; do
+    echo "=== Helm install/upgrade: ${release} (attempt ${attempt}/${retries}) ==="
+    if helm upgrade --install "$release" "$chart" \
+      --namespace monitoring \
+      -f "$values_file" \
+      --wait --timeout "$HELM_TIMEOUT"; then
+      return 0
+    fi
+
+    echo "WARN: ${release} deployment attempt ${attempt} failed."
+    dump_monitoring_diagnostics
+    if [ "$attempt" -lt "$retries" ]; then
+      sleep $((attempt * 20))
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  echo "ERROR: ${release} failed after ${retries} attempts."
+  return 1
+}
+
 echo "=== Checking prerequisites ==="
 command -v docker >/dev/null || { echo "ERROR: docker not found"; exit 1; }
 command -v kubectl >/dev/null || { echo "ERROR: kubectl not found"; exit 1; }
@@ -34,25 +72,13 @@ kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f 
 kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace vcluster-sandboxes --dry-run=client -o yaml | kubectl apply -f -
 
-helm upgrade --install prometheus prometheus-community/prometheus \
-  --namespace monitoring \
-  -f k8s/monitoring/prometheus-values.yaml \
-  --wait --timeout 3m
+helm_upgrade_with_retry "prometheus" "prometheus-community/prometheus" "k8s/monitoring/prometheus-values.yaml" "$HELM_RETRIES"
 
-helm upgrade --install loki grafana/loki-stack \
-  --namespace monitoring \
-  -f k8s/monitoring/loki-values.yaml \
-  --wait --timeout 3m
+helm_upgrade_with_retry "loki" "grafana/loki-stack" "k8s/monitoring/loki-values.yaml" "$HELM_RETRIES"
 
-helm upgrade --install tempo grafana/tempo \
-  --namespace monitoring \
-  -f k8s/monitoring/tempo-values.yaml \
-  --wait --timeout 3m
+helm_upgrade_with_retry "tempo" "grafana/tempo" "k8s/monitoring/tempo-values.yaml" "$HELM_RETRIES"
 
-helm upgrade --install grafana grafana/grafana \
-  --namespace monitoring \
-  -f k8s/monitoring/grafana-values.yaml \
-  --wait --timeout 3m
+helm_upgrade_with_retry "grafana" "grafana/grafana" "k8s/monitoring/grafana-values.yaml" "$HELM_RETRIES"
 
 kubectl apply -f k8s/demo-app-config.yaml
 kubectl apply -f k8s/payment-api.yaml
@@ -69,7 +95,7 @@ wait_for_rollout auth-service
 wait_for_rollout payment-api
 wait_for_rollout api-service
 
-kubectl wait --for=condition=ready pod --all -n monitoring --timeout=180s
+kubectl wait --for=condition=ready pod --all -n monitoring --timeout=600s
 
 bash "$ROOT_DIR/scripts/port_forward.sh"
 

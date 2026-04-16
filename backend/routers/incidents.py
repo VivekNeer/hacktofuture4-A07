@@ -12,23 +12,12 @@ from executor.vcluster_manager import VClusterManager
 from planner.plan_simulator import simulate_action
 from planner.planner_agent import PlannerAgent
 from verifier.recovery_checker import RecoveryChecker
+from incident.store import INCIDENTS
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 planner_agent = PlannerAgent()
 executor_agent = ExecutorAgent(VClusterManager(), ActionRunner())
 recovery_checker = RecoveryChecker()
-
-INCIDENTS: list[dict] = [
-    {
-        "incident_id": "inc-001",
-        "service": "payment-api",
-        "status": "open",
-        "failure_class": "resource",
-        "scope": {"namespace": "default", "deployment": "payment-api"},
-        "dependency_graph_summary": "frontend -> payment-api -> db",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-]
 
 
 def _find_incident(incident_id: str) -> dict[str, Any]:

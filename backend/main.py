@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from init_db import init_db
+from agents.live_monitor_agent import LIVE_MONITOR_AGENT
 from routers.agents import router as agents_router
 from routers.cost import router as cost_router
 from routers.fault_injection import router as fault_injection_router
@@ -45,6 +46,13 @@ def create_app() -> FastAPI:
                         print(f"WARN: {name} unhealthy at startup: unexpected body='{response.text.strip()}' url={url}")
                 except Exception:
                     print(f"WARN: {name} not reachable at {url}")
+
+        # Start the always-on monitor loop after dependencies are initialized.
+        await LIVE_MONITOR_AGENT.start()
+
+    @app.on_event("shutdown")
+    async def shutdown() -> None:
+        await LIVE_MONITOR_AGENT.stop()
 
     app.include_router(health_router)
     app.include_router(scenarios_router)

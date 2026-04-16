@@ -1,15 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import json
-from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 
-from collectors.k8s_events_collector import K8sEventsCollector
-from collectors.loki_collector import LokiCollector
-from collectors.prometheus_collector import PrometheusCollector
-from collectors.tempo_collector import TempoCollector
 from db import get_db
+from agents.live_monitor_agent import LIVE_MONITOR_AGENT
 from fault_injection.fault_injector import FaultInjector
 from models.schemas import FaultInjectionRequest, FaultInjectionResponse
 
@@ -32,20 +29,20 @@ async def inject_fault(body: FaultInjectionRequest) -> FaultInjectionResponse:
         db.close()
 
     injector = FaultInjector([scenario])
-    injector.apply_fault(body.scenario_id)
-    snapshot_id = f"obs-{uuid4().hex[:8]}"
+    try:
+        injector.apply_fault(body.scenario_id, force=body.force)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail={"error": "fault_injection_failed", "reason": str(exc)})
 
-    snapshot = await injector.collect_snapshot(
-        scenario_id=body.scenario_id,
-        snapshot_id=snapshot_id,
-        prometheus=PrometheusCollector(),
-        loki=LokiCollector(),
-        k8s_events=K8sEventsCollector(),
-        tempo=TempoCollector(),
-    )
+    # Keep incident creation monitor-driven, but nudge an immediate detection cycle
+    # so the user does not need to wait for the next poll interval.
+    try:
+        asyncio.create_task(LIVE_MONITOR_AGENT.run_cycle_once())
+    except Exception:
+        pass
 
     return FaultInjectionResponse(
+        status="injected",
         scenario_id=body.scenario_id,
-        snapshot=snapshot,
-        message="Snapshot collected from metrics, logs, events, and traces",
+        command_applied=str(scenario.get("k8s_fault_action", "")),
     )

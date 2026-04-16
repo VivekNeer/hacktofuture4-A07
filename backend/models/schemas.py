@@ -223,6 +223,6 @@ class FaultInjectionRequest(BaseModel):
 
 
 class FaultInjectionResponse(BaseModel):
+    status: str
     scenario_id: str
-    snapshot: IncidentSnapshot
-    message: str
+    command_applied: str
