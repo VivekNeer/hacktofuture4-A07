@@ -15,6 +15,10 @@ router = APIRouter(tags=["fault-injection"])
 
 @router.post("/inject-fault")
 async def inject_fault(body: FaultInjectionRequest) -> FaultInjectionResponse:
+    print(
+        "INFO: inject-fault request:",
+        {"scenario_id": body.scenario_id, "force": body.force},
+    )
     db = get_db()
     try:
         row = db.execute(

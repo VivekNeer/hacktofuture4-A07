@@ -1,39 +1,16 @@
 "use client";
-import { useState } from "react";
 import { ExecutorResult } from "@/lib/types";
-import { api } from "@/lib/api";
-import Spinner from "@/components/ui/Spinner";
 
 interface Props {
   execution: ExecutorResult | null;
-  incidentId: string;
-  onRefresh: () => void;
 }
 
-export default function ExecutorPanel({ execution, incidentId, onRefresh }: Props) {
-  const [running, setRunning] = useState(false);
+export default function ExecutorPanel({ execution }: Props) {
 
   if (!execution) {
     return (
       <div className="executor-panel panel-empty">
-        <button
-          className="btn-primary"
-          onClick={async () => {
-            setRunning(true);
-            try {
-              await api.execute(incidentId);
-              onRefresh();
-            } catch (error) {
-              console.error("Failed to execute plan", error);
-            } finally {
-              setRunning(false);
-            }
-          }}
-          disabled={running}
-          aria-busy={running}
-        >
-          {running ? <Spinner /> : "Run Execute"}
-        </button>
+        <p>Execution is disabled in this demo. Use diagnose and plan to validate the self-healing flow.</p>
       </div>
     );
   }

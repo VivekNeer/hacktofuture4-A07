@@ -93,10 +93,34 @@ class LiveMonitorAgent:
         service = str(scenario.get("service", deployment))
         pod = await self._resolve_pod_name(namespace, deployment)
 
-        metrics = await self.prometheus.get_incident_metrics(namespace=namespace, pod=pod)
-        baseline = await self.prometheus.get_baseline_samples(namespace=namespace, pod=pod, samples=10)
-        logs = await self.loki.get_log_lines(namespace=namespace, service=service)
-        events = self.k8s_events.get_deployment_events(namespace=namespace, deployment=deployment, window_minutes=5)
+        try:
+            metrics = await self.prometheus.get_incident_metrics(namespace=namespace, pod=pod)
+        except Exception as exc:
+            print(f"WARN: prometheus metrics failed for {scenario_id}: {exc}")
+            metrics = {
+                "cpu_usage_percent": 0.0,
+                "memory_usage_percent": 0.0,
+                "restart_count": 0,
+                "latency_p95_seconds": 0.0,
+            }
+
+        try:
+            baseline = await self.prometheus.get_baseline_samples(namespace=namespace, pod=pod, samples=10)
+        except Exception as exc:
+            print(f"WARN: prometheus baseline failed for {scenario_id}: {exc}")
+            baseline = []
+
+        try:
+            logs = await self.loki.get_log_lines(namespace=namespace, service=service)
+        except Exception as exc:
+            print(f"WARN: loki logs failed for {scenario_id}: {exc}")
+            logs = []
+
+        try:
+            events = self.k8s_events.get_deployment_events(namespace=namespace, deployment=deployment, window_minutes=5)
+        except Exception as exc:
+            print(f"WARN: k8s events failed for {scenario_id}: {exc}")
+            events = []
 
         baseline_last = baseline[-1] if baseline else {}
         if not self._is_anomaly_for_scenario(
@@ -406,6 +430,7 @@ class LiveMonitorAgent:
     def _to_diagnosis_snapshot(incident: dict[str, Any]) -> dict[str, Any]:
         snapshot = incident.get("snapshot", {})
         metrics = snapshot.get("metrics", {})
+        trace_summary = snapshot.get("trace_summary")
         return {
             "metrics": {
                 "memory_pct": float(str(metrics.get("memory", "0")).rstrip("%") or 0),
@@ -415,7 +440,7 @@ class LiveMonitorAgent:
             },
             "events": snapshot.get("events", []),
             "logs_summary": snapshot.get("logs_summary", []),
-            "trace": snapshot.get("trace_summary") or {},
+            "trace": trace_summary if isinstance(trace_summary, dict) and trace_summary else None,
         }
 
     def _create_incident_record(self, *, incident: dict[str, Any], diagnosis: dict[str, Any]) -> dict[str, Any]:
@@ -447,6 +472,26 @@ class LiveMonitorAgent:
         }
 
         INCIDENTS.insert(0, record)
+
+        try:
+            print(
+                "INFO: monitor incident snapshot:",
+                json.dumps(record.get("snapshot", {}), default=str),
+            )
+            print(
+                "INFO: monitor diagnosis summary:",
+                json.dumps(
+                    {
+                        "incident_id": record.get("incident_id"),
+                        "mode": record.get("diagnosis", {}).get("diagnosis_mode"),
+                        "root_cause": record.get("diagnosis", {}).get("root_cause"),
+                        "confidence": record.get("diagnosis", {}).get("confidence"),
+                    },
+                    default=str,
+                ),
+            )
+        except Exception:
+            pass
 
         db = get_db()
         try:

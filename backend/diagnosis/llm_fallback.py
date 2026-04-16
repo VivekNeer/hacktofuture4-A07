@@ -7,11 +7,23 @@ import json
 import logging
 import os
 import re
+from urllib.parse import urlparse
 from typing import Optional, Dict, Any
 import requests
 from models.schemas import DiagnosisPayload, IncidentSnapshot, StructuredReasoning
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_endpoint_label(url: str) -> str:
+    """Return a non-sensitive endpoint label for logs."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}{parsed.path or ''}"
+    except Exception:
+        pass
+    return "<invalid-url>"
 
 
 class LLMFallbackError(Exception):
@@ -52,14 +64,28 @@ def call_llm_api(
 
     # Construct prompt for LLM
     prompt = _construct_diagnosis_prompt(incident_snapshot)
+    resolved_model = os.getenv("LLM_FALLBACK_MODEL") or os.getenv("GROQ_MODEL") or model
+    api_key = os.getenv("LLM_FALLBACK_API_KEY") or os.getenv("GROQ_API_KEY")
+
+    logger.info(
+        "LLM fallback request: endpoint=%s model=%s auth_header=%s",
+        _safe_endpoint_label(resolved_api_url),
+        resolved_model,
+        "present" if api_key else "absent",
+    )
     
     try:
         # Call LLM API
+        payload = _build_llm_payload(prompt, resolved_model)
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
         response = requests.post(
             resolved_api_url,
-            json={"message": prompt, "model": model},
+            json=payload,
             timeout=timeout_seconds,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
         )
         response.raise_for_status()
         
@@ -159,8 +185,8 @@ def _parse_llm_response(response_data: Dict[str, Any], snapshot: Dict[str, Any])
         ValueError: If response format is invalid
     """
     
-    # Extract message field from response
-    message = response_data.get("message", "")
+    # Extract message text from a variety of API response shapes.
+    message = _extract_message_text(response_data)
     if not message:
         raise ValueError("No message in LLM response")
     
@@ -192,9 +218,71 @@ def _parse_llm_response(response_data: Dict[str, Any], snapshot: Dict[str, Any])
         "root_cause": str(diagnosis["root_cause"]),
         "confidence": float(confidence),
         "reasoning": str(diagnosis.get("reasoning", "AI diagnosed based on incident signals")),
-        "suggested_actions": diagnosis.get("suggested_actions", []),
+        "suggested_actions": _normalize_suggested_actions(diagnosis),
         "source": "llm_fallback",
     }
+
+
+def _normalize_suggested_actions(diagnosis: Dict[str, Any]) -> list[str]:
+    """Extract a clean list of action suggestions from common LLM response keys."""
+    candidates = diagnosis.get("suggested_actions")
+    if candidates is None:
+        candidates = diagnosis.get("actions")
+    if candidates is None:
+        candidates = diagnosis.get("recommendations")
+    if candidates is None:
+        candidates = diagnosis.get("next_steps")
+
+    if isinstance(candidates, str):
+        text = candidates.strip()
+        return [text] if text else []
+
+    if isinstance(candidates, list):
+        cleaned: list[str] = []
+        for item in candidates:
+            value = str(item).strip()
+            if value:
+                cleaned.append(value)
+        return cleaned
+
+    return []
+
+
+def _build_llm_payload(prompt: str, model: str) -> Dict[str, Any]:
+    """Build request payload for chat-compatible and legacy backends."""
+    del model
+    return {
+        "messages": [{"role": "user", "content": prompt}],
+    }
+
+
+def _extract_message_text(response_data: Dict[str, Any]) -> str:
+    """Extract text content from common chat/completions response formats."""
+    if "message" in response_data and isinstance(response_data["message"], str):
+        return response_data["message"]
+
+    choices = response_data.get("choices")
+    if isinstance(choices, list) and choices:
+        first = choices[0]
+        if isinstance(first, dict):
+            message = first.get("message")
+            if isinstance(message, dict):
+                content = message.get("content")
+                if isinstance(content, str):
+                    return content
+            content = first.get("text")
+            if isinstance(content, str):
+                return content
+
+    output = response_data.get("output")
+    if isinstance(output, str):
+        return output
+
+    content = response_data.get("content")
+    if isinstance(content, str):
+        return content
+
+    return ""
 
 
 def should_use_llm_fallback(
@@ -282,6 +370,7 @@ def rule_only_fallback(snapshot: IncidentSnapshot, features: Dict[str, Any]) -> 
         confidence=max(0.5, min(0.74, float(snapshot.monitor_confidence))),
         diagnosis_mode="rule",
         fingerprint_matched=False,
+        suggested_actions=[],
         estimated_token_cost=0.0,
         actual_token_cost=0.0,
         affected_services=[snapshot.service],
@@ -306,7 +395,8 @@ def run_ai_diagnosis(
     incident_id: str,
 ) -> DiagnosisPayload:
     del db, incident_id
-    if token_governor and token_governor.should_fallback_to_rule_only(float(snapshot.monitor_confidence)):
+    force_ai = os.getenv("FORCE_AI_FALLBACK", "false").strip().lower() in {"1", "true", "yes", "on"}
+    if token_governor and not force_ai and token_governor.should_fallback_to_rule_only(float(snapshot.monitor_confidence)):
         return rule_only_fallback(snapshot, features)
 
     raw = call_llm_api(
@@ -328,6 +418,7 @@ def run_ai_diagnosis(
         confidence=float(raw["confidence"]),
         diagnosis_mode="ai",
         fingerprint_matched=False,
+        suggested_actions=[str(item).strip() for item in raw.get("suggested_actions", []) if str(item).strip()],
         estimated_token_cost=0.0,
         actual_token_cost=0.0,
         affected_services=[snapshot.service],

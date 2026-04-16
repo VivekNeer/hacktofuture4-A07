@@ -1,10 +1,19 @@
 import { IncidentSnapshot } from "@/lib/types";
 
 interface Props {
-  snapshot: IncidentSnapshot;
+  snapshot: IncidentSnapshot | null;
 }
 
 export default function SignalPanel({ snapshot }: Props) {
+  if (!snapshot) {
+    return (
+      <section className="signal-panel panel-empty">
+        <h3 className="section-title">Observation Signals</h3>
+        <p>No snapshot is available yet for this incident.</p>
+      </section>
+    );
+  }
+
   return (
     <section className="signal-panel panel">
       <h3 className="section-title">Observation Signals</h3>
