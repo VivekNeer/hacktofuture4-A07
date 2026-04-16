@@ -46,12 +46,16 @@ class FaultInjector:
         namespace = scenario["namespace"]
         deployment = scenario["deployment"]
         service = scenario["service"]
-        pod_name = scenario.get("pod")
+        pod_name = scenario.get("pod") or f"{deployment}-demo"
 
-        if not pod_name:
-            # Fallback path: use deployment label to resolve first pod.
-            pods = k8s_events.v1.list_namespaced_pod(namespace=namespace, label_selector=f"app={deployment}")
-            pod_name = pods.items[0].metadata.name if pods.items else f"{deployment}-unknown"
+        # Windows demo mode: prefer a stable fallback pod name if live Kubernetes
+        # discovery is unavailable or the client cannot be initialized.
+        if getattr(k8s_events, "v1", None) is not None:
+            try:
+                pods = k8s_events.v1.list_namespaced_pod(namespace=namespace, label_selector=f"app={deployment}")
+                pod_name = pods.items[0].metadata.name if pods.items else pod_name
+            except Exception:
+                pod_name = pod_name
 
         metrics = await prometheus.get_incident_metrics(namespace=namespace, pod=pod_name)
         baseline = await prometheus.get_baseline_samples(namespace=namespace, pod=pod_name, samples=10)
