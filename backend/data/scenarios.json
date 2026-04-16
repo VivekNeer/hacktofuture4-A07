@@ -3,13 +3,13 @@
     {
       "scenario_id": "oom-kill-001",
       "name": "OOM Kill on payment-api",
-      "description": "Patches memory limit to 30Mi on payment-api to trigger OOM behavior",
+      "description": "Patches memory limit to 30Mi on payment-api forcing the running pod to OOMKill under its current load",
       "failure_class": "resource_exhaustion",
       "service": "payment-api",
       "namespace": "prod",
       "deployment": "payment-api",
       "severity": "high",
-      "k8s_fault_action": "kubectl patch deployment payment-api -n prod -p '{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"payment-api\",\"resources\":{\"limits\":{\"memory\":\"30Mi\"}}}]}}}}' --type=merge",
+      "k8s_fault_action": "kubectl patch deployment payment-api -n prod -p '{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"payment-api\",\"image\":\"python:3.11-slim\",\"resources\":{\"limits\":{\"memory\":\"30Mi\"}}}]}}}}' --type=merge",
       "k8s_restore_hint": "kubectl rollout restart deployment/payment-api -n prod",
       "fault_settle_seconds": 30,
       "expected_fingerprint": "FP-001",
@@ -19,7 +19,7 @@
     {
       "scenario_id": "cpu-spike-001",
       "name": "CPU Spike on api-service",
-      "description": "Runs CPU stress workload alongside api-service",
+      "description": "Deploys a CPU stress pod alongside api-service and reduces its CPU limit to cause throttling",
       "failure_class": "resource_exhaustion",
       "service": "api-service",
       "namespace": "prod",
@@ -31,6 +31,38 @@
       "expected_fingerprint": "FP-006",
       "expected_fix": "kubectl scale deployment/api-service --replicas=3 -n prod",
       "verification_seconds": 90
+    },
+    {
+      "scenario_id": "crash-loop-001",
+      "name": "CrashLoopBackOff on auth-service",
+      "description": "Sets a bad container image on auth-service causing ImagePullBackOff then CrashLoopBackOff",
+      "failure_class": "application_crash",
+      "service": "auth-service",
+      "namespace": "prod",
+      "deployment": "auth-service",
+      "severity": "high",
+      "k8s_fault_action": "kubectl set image deployment/auth-service auth-service=nginx:this-tag-does-not-exist -n prod",
+      "k8s_restore_hint": "kubectl rollout undo deployment/auth-service -n prod",
+      "fault_settle_seconds": 45,
+      "expected_fingerprint": "FP-002",
+      "expected_fix": "kubectl rollout undo deployment/auth-service -n prod",
+      "verification_seconds": 120
+    },
+    {
+      "scenario_id": "db-latency-001",
+      "name": "Readiness Probe Failure on payment-api",
+      "description": "Patches the readiness probe path to a non-existent endpoint, causing repeated Unhealthy events and traffic impact",
+      "failure_class": "dependency_failure",
+      "service": "payment-api",
+      "namespace": "prod",
+      "deployment": "payment-api",
+      "severity": "high",
+      "k8s_fault_action": "kubectl patch deployment payment-api -n prod -p '{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"payment-api\",\"readinessProbe\":{\"httpGet\":{\"path\":\"/this-does-not-exist\"}}}]}}}}' --type=merge",
+      "k8s_restore_hint": "kubectl rollout restart deployment/payment-api -n prod",
+      "fault_settle_seconds": 30,
+      "expected_fingerprint": "FP-005",
+      "expected_fix": "kubectl rollout restart deployment/payment-api -n prod",
+      "verification_seconds": 150
     }
   ]
 }
