@@ -24,6 +24,7 @@ INCIDENTS: list[dict] = [
 
 
 def _find_incident(incident_id: str) -> dict[str, Any]:
+    """Return the in-memory incident record for the requested incident ID."""
     for incident in INCIDENTS:
         if incident["incident_id"] == incident_id:
             return incident
@@ -32,16 +33,19 @@ def _find_incident(incident_id: str) -> dict[str, Any]:
 
 @router.get("")
 def list_incidents() -> list[dict]:
+    """Return all in-memory incidents for the demo API."""
     return INCIDENTS
 
 
 @router.get("/{incident_id}")
 def get_incident(incident_id: str) -> dict:
+    """Return the incident detail payload for a single incident."""
     return _find_incident(incident_id)
 
 
 @router.post("/{incident_id}/plan")
 def plan_incident(incident_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Generate and persist a plan for the incident using the planner agent."""
     incident = _find_incident(incident_id)
     body = payload or {}
 
@@ -84,6 +88,7 @@ def plan_incident(incident_id: str, payload: dict[str, Any] | None = None) -> di
 
 @router.post("/{incident_id}/simulate")
 def simulate_incident_action(incident_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Recompute the simulation result for a planned action."""
     incident = _find_incident(incident_id)
     if "plan_json" not in incident or not incident["plan_json"].get("actions"):
         raise HTTPException(status_code=400, detail="No plan available. Run /plan first.")
@@ -118,6 +123,7 @@ def simulate_incident_action(incident_id: str, payload: dict[str, Any] | None = 
 
 @router.post("/{incident_id}/approve")
 def approve_incident_action(incident_id: str) -> dict:
+    """Mark the incident as approved so the next execution stage can proceed."""
     incident = _find_incident(incident_id)
 
     if incident.get("status") == "failed":

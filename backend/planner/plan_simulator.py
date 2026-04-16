@@ -7,6 +7,7 @@ from models.schemas import SimulationResult
 
 
 def compute_blast_radius(action: dict[str, Any], dependency_summary: str) -> float:
+    """Estimate how widely an action could affect the service graph."""
     command = str(action.get("command", "")).lower()
     score = 0.0
 
@@ -26,6 +27,7 @@ def compute_blast_radius(action: dict[str, Any], dependency_summary: str) -> flo
 
 
 def check_rollback_ready(action: dict[str, Any], snapshot: dict[str, Any]) -> bool:
+    """Return whether rollback material is available for the proposed action."""
     command = str(action.get("command", "")).lower()
     if "rollout undo" not in command:
         return True
@@ -35,6 +37,7 @@ def check_rollback_ready(action: dict[str, Any], snapshot: dict[str, Any]) -> bo
 
 
 def assess_dependency_impact(action: dict[str, Any], dependency_summary: str) -> DependencyImpact:
+    """Classify the expected dependency impact of the proposed action."""
     command = str(action.get("command", "")).lower()
     if ("rollout undo" in command or "set image" in command) and "high error rate" in dependency_summary.lower():
         return DependencyImpact.BROAD
@@ -46,6 +49,7 @@ def assess_dependency_impact(action: dict[str, Any], dependency_summary: str) ->
 
 
 def simulate_action(action: dict[str, Any], snapshot: dict[str, Any]) -> SimulationResult:
+    """Simulate planner output and return safety signals for approval decisions."""
     dependency_summary = str(snapshot.get("dependency_graph_summary", ""))
     blast_radius = compute_blast_radius(action, dependency_summary)
     rollback_ready = check_rollback_ready(action, snapshot)

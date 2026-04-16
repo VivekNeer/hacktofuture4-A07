@@ -7,6 +7,7 @@ router = APIRouter(tags=["cost"])
 
 @router.get("/cost-report")
 def cost_report() -> dict:
+    """Return the current token and cost counters for the active incident."""
     return {
         "total_estimated_cost_usd": round(GLOBAL_TOKEN_GOVERNOR.estimated_cost_this_incident, 8),
         "total_actual_cost_usd": round(GLOBAL_TOKEN_GOVERNOR.cost_this_incident, 8),

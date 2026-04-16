@@ -19,10 +19,12 @@ GLOBAL_PLANNER_AGENT = PlannerAgent()
 
 
 def _utc_now() -> str:
+    """Return the current UTC timestamp in ISO-8601 format."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _coerce_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Normalize legacy and nested monitor snapshots into the current shape."""
     if "metrics" in snapshot and "events" in snapshot and "logs_summary" in snapshot:
         return snapshot
 
@@ -40,6 +42,7 @@ def _coerce_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 
 def collect_monitor_snapshot(monitor_agent: Optional[MonitorAgent] = None) -> dict[str, Any]:
+    """Collect and normalize a monitor snapshot from the active agent."""
     agent = monitor_agent or GLOBAL_MONITOR_AGENT
     snapshot = _coerce_snapshot(agent.collect_snapshot())
     snapshot["collected_at"] = _utc_now()
@@ -52,6 +55,7 @@ def diagnose_snapshot(
     llm_api_url: Optional[str] = None,
     llm_model: str = "custom-api",
 ) -> dict[str, Any]:
+    """Run rule-based diagnosis first and fall back to the LLM when allowed."""
     tg = token_governor or GLOBAL_TOKEN_GOVERNOR
     normalized = _coerce_snapshot(snapshot)
 
@@ -125,6 +129,7 @@ def diagnose_snapshot(
 
 
 def plan_diagnosis(diagnosis: dict[str, Any], context: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """Convert a diagnosis into a planner action set with backward-compatible fields."""
     ctx = context or {}
     snapshot = {
         "dependency_graph_summary": str(ctx.get("dependency_graph_summary", "")),
@@ -161,6 +166,7 @@ def run_phase3_pipeline(
     llm_api_url: Optional[str] = None,
     llm_model: str = "custom-api",
 ) -> dict[str, Any]:
+    """Execute the monitor, diagnose, and plan stages as one pipeline."""
     snapshot = collect_monitor_snapshot(monitor_agent=monitor_agent)
     diagnosis = diagnose_snapshot(
         snapshot=snapshot,

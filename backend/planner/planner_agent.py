@@ -9,12 +9,15 @@ from planner.policy_ranker import lookup_policy
 
 
 class PlannerAgent:
+    """Convert diagnosis output into ranked planner actions with simulation data."""
+
     def run(
         self,
         diagnosis: dict[str, Any],
         snapshot: dict[str, Any],
         context: Optional[dict[str, Any]] = None,
     ) -> PlannerOutput:
+        """Build a PlannerOutput from policy, fallback, or default remediation options."""
         actions = self._lookup_or_fallback(diagnosis, snapshot, context)
 
         planner_actions: list[PlannerAction] = []
@@ -57,6 +60,7 @@ class PlannerAgent:
         snapshot: dict[str, Any],
         context: Optional[dict[str, Any]],
     ) -> list[dict[str, Any]]:
+        """Resolve policy actions first, then fall back to suggested or safe default actions."""
         fingerprint_id = diagnosis.get("fingerprint_id")
         policy_actions = lookup_policy(str(fingerprint_id), context or {}) if fingerprint_id else None
         if policy_actions:
@@ -96,6 +100,7 @@ class PlannerAgent:
         ]
 
     def _to_risk_level(self, raw: Any) -> RiskLevel:
+        """Map a free-form risk label to the canonical RiskLevel enum."""
         value = str(raw).lower()
         if value == RiskLevel.LOW.value:
             return RiskLevel.LOW
