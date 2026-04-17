@@ -8,6 +8,8 @@ ALLOWED_PREFIXES = [
     "kubectl set resources",
     "kubectl scale deployment",
     "kubectl rollout undo",
+    "kubectl set env",
+    "kubectl set image",
 ]
 
 

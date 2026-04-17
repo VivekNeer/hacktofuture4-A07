@@ -39,30 +39,32 @@ export default function FaultInjector({ onInjected }: Props) {
 
   return (
     <div className="fault-injector">
-      <select
-        id="scenario-select"
-        className="scenario-select"
-        value={selected}
-        onChange={(e) => setSelected(e.target.value)}
-        aria-label="Select fault scenario"
-      >
-        <option value="">Select scenario...</option>
-        {scenarios.map((s) => (
-          <option key={s.scenario_id} value={s.scenario_id}>
-            {s.name}
-          </option>
-        ))}
-      </select>
-      <button
-        id="inject-fault-btn"
-        className="btn-inject"
-        onClick={inject}
-        disabled={loading || !selected}
-        aria-busy={loading}
-      >
-        {loading ? "Injecting..." : "Inject Fault"}
-      </button>
-      {error && <span className="error-text">{error}</span>}
+      <div className="fault-controls">
+        <select
+          id="scenario-select"
+          className="scenario-select"
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          aria-label="Select fault scenario"
+        >
+          <option value="">Select scenario...</option>
+          {scenarios.map((s) => (
+            <option key={s.scenario_id} value={s.scenario_id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <button
+          id="inject-fault-btn"
+          className="btn-inject"
+          onClick={inject}
+          disabled={loading || !selected}
+          aria-busy={loading}
+        >
+          {loading ? "Injecting..." : "Inject Fault"}
+        </button>
+      </div>
+      {error && <span className="error-text fault-error">{error}</span>}
     </div>
   );
 }

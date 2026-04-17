@@ -71,17 +71,17 @@ export default function ApprovalModal({
 
         <div className="modal-section">
           <label className="modal-label">Expected Outcome</label>
-          <p>{action.expected_outcome}</p>
+          <p className="modal-text">{action.expected_outcome}</p>
         </div>
 
         <div className="modal-section">
           <label className="modal-label">Simulation</label>
           <ul className="sim-list">
-            <li>Blast radius: {Math.round(action.simulation_result.blast_radius_score * 100)}%</li>
-            <li>Rollback ready: {action.simulation_result.rollback_ready ? "Yes" : "No"}</li>
-            <li>Dependency impact: {action.simulation_result.dependency_impact}</li>
+            <li className="sim-item">Blast radius: {Math.round(action.simulation_result.blast_radius_score * 100)}%</li>
+            <li className="sim-item">Rollback ready: {action.simulation_result.rollback_ready ? "Yes" : "No"}</li>
+            <li className="sim-item">Dependency impact: {action.simulation_result.dependency_impact}</li>
             {action.simulation_result.policy_violations.length > 0 && (
-              <li className="violation">
+              <li className="sim-item violation">
                 Violations: {action.simulation_result.policy_violations.join(", ")}
               </li>
             )}

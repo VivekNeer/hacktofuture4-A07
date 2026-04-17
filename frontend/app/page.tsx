@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useIncidents } from "@/hooks/useIncidents";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { WSMessage } from "@/lib/types";
@@ -13,7 +13,22 @@ import styles from "./page.module.css";
 export default function Dashboard() {
   const { incidents, reload } = useIncidents();
   const [selected, setSelected] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const incidentList = Array.isArray(incidents) ? incidents : [];
+
+  useEffect(() => {
+    const stored = typeof window !== "undefined" ? localStorage.getItem("a07-theme") : null;
+    const preferred: "dark" | "light" = stored === "light" || stored === "dark" ? stored : "dark";
+    setTheme(preferred);
+    document.documentElement.setAttribute("data-theme", preferred);
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("a07-theme", next);
+  };
 
   const onMessage = useCallback(
     (msg: WSMessage) => {
@@ -50,6 +65,9 @@ export default function Dashboard() {
           </span>
         </div>
         <div className="header-right">
+          <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark theme">
+            {theme === "dark" ? "Light mode" : "Dark mode"}
+          </button>
           <ConnectionBadge connected={connected} />
           <FaultInjector onInjected={reload} />
         </div>

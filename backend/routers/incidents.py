@@ -74,6 +74,48 @@ async def _cleanup_injected_fault(incident: dict[str, Any]) -> None:
         print(f"WARN: Exception during fault cleanup for {scenario_id}: {exc}")
 
 
+def _severity_rank(value: str) -> int:
+    order = {"low": 1, "medium": 2, "high": 3, "critical": 4}
+    return order.get(str(value or "").lower(), 2)
+
+
+def _merge_severity(current: str, candidate: str) -> str:
+    current_value = str(current or "medium").lower()
+    candidate_value = str(candidate or "medium").lower()
+    return candidate_value if _severity_rank(candidate_value) > _severity_rank(current_value) else current_value
+
+
+def _severity_from_plan_actions(actions: list[dict[str, Any]]) -> str:
+    risk_to_severity = {"low": "low", "medium": "medium", "high": "high"}
+    highest = "low"
+    for action in actions:
+        risk = str(action.get("risk_level", "")).lower()
+        mapped = risk_to_severity.get(risk, "medium")
+        highest = _merge_severity(highest, mapped)
+    return highest
+
+
+def _normalize_execution_command(raw_command: str, incident: dict[str, Any], action: dict[str, Any]) -> str:
+    """Convert free-text plan actions into safe allowlisted kubectl commands."""
+    command = str(raw_command or "").strip()
+    if command.startswith("kubectl "):
+        return command
+
+    text = f"{command} {str(action.get('description', ''))}".lower()
+    deployment = str(incident.get("service") or incident.get("scope", {}).get("deployment") or "<deployment>")
+    namespace = str(incident.get("namespace") or incident.get("scope", {}).get("namespace") or "default")
+
+    if "rollback" in text or "undo" in text:
+        return f"kubectl rollout undo deployment/{deployment} -n {namespace}"
+    if "scale" in text or "replica" in text:
+        return f"kubectl scale deployment/{deployment} -n {namespace} --replicas=3"
+    if "resource" in text or "memory" in text:
+        return f"kubectl set resources deployment/{deployment} -n {namespace} --limits=memory=2Gi"
+    if "env" in text or "config" in text:
+        return f"kubectl set env deployment/{deployment} -n {namespace} HOTFIX_MODE=true"
+    return f"kubectl rollout restart deployment/{deployment} -n {namespace}"
+
+
 def _find_incident(incident_id: str) -> dict[str, Any]:
     """Return the in-memory incident record for the requested incident ID."""
     for incident in INCIDENTS:
@@ -337,7 +379,7 @@ def get_incident_timeline(incident_id: str) -> dict[str, Any]:
     if incident.get("diagnosis") is not None:
         events.append(
             {
-                "timestamp": incident.get("updated_at") or created_at,
+                "timestamp": incident.get("diagnosed_at") or incident.get("updated_at") or created_at,
                 "status": "diagnosing",
                 "actor": "diagnose-agent",
                 "note": "Diagnosis generated",
@@ -348,7 +390,7 @@ def get_incident_timeline(incident_id: str) -> dict[str, Any]:
         events.append(
             {
                 "timestamp": incident.get("planned_at"),
-                "status": incident.get("status", "planned"),
+                "status": "planned",
                 "actor": "planner-agent",
                 "note": "Remediation plan generated",
             }
@@ -447,6 +489,10 @@ async def plan_incident(incident_id: str, payload: dict[str, Any] | None = None)
     incident["diagnosis"] = diagnosis
     incident["plan_json"] = {"actions": actions}
     incident["plan"] = incident["plan_json"]
+    incident["severity"] = _merge_severity(
+        str(incident.get("severity", "medium")),
+        _severity_from_plan_actions(actions),
+    )
     incident["planned_at"] = datetime.now(timezone.utc).isoformat()
 
     previous_status = incident.get("status", "open")
@@ -660,7 +706,8 @@ async def execute_incident_action(incident_id: str, payload: dict[str, Any] | No
         raise HTTPException(status_code=400, detail="Invalid action_index")
 
     action = actions[action_index]
-    command = str(action.get("action", ""))
+    command = _normalize_execution_command(str(action.get("action", "")), incident, action)
+    action["action"] = command
 
     previous_status = incident.get("status", "open")
     incident["status"] = "executing"

@@ -78,14 +78,15 @@ class PlannerAgent:
             if str(item).strip()
         ]
         if suggested_actions:
+            ctx = context or {}
             return [
                 {
                     "action_id": f"llm-alt-{idx + 1}",
-                    "command": action,
+                    "command": self._to_executable_command(action, ctx),
                     "risk": "medium",
                     "approval_required": True,
                     "blast_radius_score": 0.3,
-                    "description": "LLM suggested remediation",
+                    "description": action,
                     "expected_outcome": "Symptoms reduce after applying suggested remediation",
                 }
                 for idx, action in enumerate(suggested_actions)
@@ -113,3 +114,17 @@ class PlannerAgent:
         if value in {RiskLevel.HIGH.value, "critical"}:
             return RiskLevel.HIGH
         return RiskLevel.MEDIUM
+
+    def _to_executable_command(self, suggestion: str, context: dict[str, Any]) -> str:
+        """Map free-text suggestions to safe, allowlisted kubectl commands."""
+        text = suggestion.lower()
+        deployment = str(context.get("deployment", "<deployment>"))
+        namespace = str(context.get("namespace", "default"))
+
+        if "rollback" in text or "undo" in text:
+            return f"kubectl rollout undo deployment/{deployment} -n {namespace}"
+        if "scale" in text or "replica" in text:
+            return f"kubectl scale deployment/{deployment} -n {namespace} --replicas=3"
+        if "resource" in text or "memory" in text:
+            return f"kubectl set resources deployment/{deployment} -n {namespace} --limits=memory=2Gi"
+        return f"kubectl rollout restart deployment/{deployment} -n {namespace}"
