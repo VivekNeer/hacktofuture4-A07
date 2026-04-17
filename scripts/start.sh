@@ -6,6 +6,13 @@ cd "$ROOT_DIR"
 PID_DIR="$ROOT_DIR/.run"
 mkdir -p "$PID_DIR"
 
+is_true() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 command -v uv >/dev/null || { echo "ERROR: uv not found. Install from https://docs.astral.sh/uv/getting-started/"; exit 1; }
 
 # Best-effort cleanup of stale processes from prior runs.
@@ -45,7 +52,16 @@ uv pip install -r requirements.txt 2>&1 | tee /tmp/t3ps2-pip.log || {
   exit 1
 }
 
-if [ ! -f data/t3ps2.db ]; then
+clean_start_value="${CLEAN_START:-1}"
+if is_true "$clean_start_value"; then
+  echo "Applying clean start reset (set CLEAN_START=0 to keep prior incident state)..."
+  rm -f data/t3ps2.db
+  python init_db.py
+  kubectl apply -f "$ROOT_DIR/k8s/payment-api.yaml" >/dev/null 2>&1 || true
+  kubectl apply -f "$ROOT_DIR/k8s/auth-service.yaml" >/dev/null 2>&1 || true
+  kubectl apply -f "$ROOT_DIR/k8s/api-service.yaml" >/dev/null 2>&1 || true
+  kubectl delete pod cpu-stress -n prod --ignore-not-found >/dev/null 2>&1 || true
+elif [ ! -f data/t3ps2.db ]; then
   python init_db.py
 fi
 
